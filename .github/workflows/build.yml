@@ -1,0 +1,123 @@
+name: YmY OS Build
+
+on:
+  workflow_dispatch:  # Sadece manuel çalıştırma
+
+env:
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build-image:
+    name: Container Image Oluştur
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    
+    steps:
+      - name: Repository'yi Çek
+        uses: actions/checkout@v4
+
+      - name: BlueBuild ile YmY OS Oluştur
+        uses: blue-build/github-action@v1.6
+        with:
+          recipe: recipe.yml
+          cosign_private_key: ${{ secrets.SIGNING_SECRET }}
+          registry_token: ${{ github.token }}
+          pr_event_number: ${{ github.event.number }}
+
+  build-iso:
+    name: ISO Oluştur
+    runs-on: ubuntu-latest
+    needs: build-image
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Repository'yi Çek
+        uses: actions/checkout@v4
+
+      - name: Tarih Al
+        id: date
+        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: YmY OS ISO Build
+        uses: jasonn3/build-container-installer@v1.2.2
+        id: build
+        with:
+          image_name: ${{ github.repository_owner }}/ymy-os
+          image_repo: ghcr.io
+          image_tag: latest
+          version: 43
+          iso_name: YmY-OS-v43-beta-${{ steps.date.outputs.DATE }}.iso
+          variant: Silverblue
+          
+      - name: ISO Kontrol
+        run: |
+          if [ ! -f YmY-OS-v43-beta-${{ steps.date.outputs.DATE }}.iso ]; then
+            echo "❌ ISO dosyası oluşturulamadı!"
+            exit 1
+          fi
+          ls -lh YmY-OS-v43-beta-${{ steps.date.outputs.DATE }}.iso
+
+      - name: ISO Artifact Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: YmY-OS-v43-beta
+          path: YmY-OS-v43-beta-${{ steps.date.outputs.DATE }}.iso
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: GitHub Release Oluştur
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v43-beta-${{ steps.date.outputs.DATE }}
+          name: YmY OS v43 Beta (${{ steps.date.outputs.DATE }})
+          body: |
+            # 🎉 YmY OS v43 Beta
+            
+            ## 📦 Sürüm Bilgileri
+            - **Sürüm:** v43 Beta
+            - **Fedora:** 43
+            - **GNOME:** 49
+            - **Kernel:** 6.12+
+            - **Build Tarihi:** ${{ steps.date.outputs.DATE }}
+            
+            ## ✨ Özellikler
+            - ✅ Fedora 43 Silverblue tabanlı
+            - ✅ GNOME 49 masaüstü ortamı
+            - ✅ Türkçe dil desteği hazır
+            - ✅ Yeni kullanıcılar için önceden yapılandırılmış
+            - ✅ Temel uygulamalar yüklü
+            - ✅ Modern dosya sistemi desteği (NTFS, exFAT)
+            - ✅ Otomatik güncellemeler
+            
+            ## 📥 Kurulum
+            1. ISO dosyasını indir
+            2. **Ventoy**, **Rufus** veya **Fedora Media Writer** ile USB'ye yaz
+            3. Bilgisayarı USB'den başlat
+            4. Kurulum sihirbazını takip et
+            
+            ## 🐛 Beta Uyarısı
+            Bu bir **beta sürümüdür**. Üretim ortamında kullanmadan önce test edin.
+            
+            ## 🔗 Bağlantılar
+            - [Fedora Dokumentasyon](https://docs.fedoraproject.org)
+            - [YmY OS GitHub](https://github.com/${{ github.repository }})
+            
+            ## 📝 Changelog
+            - İlk beta sürümü
+            - Fedora 43 ve GNOME 49 desteği
+            - Yeni kullanıcı deneyimi optimizasyonları
+            
+            ---
+            
+            **Destek için Issues açabilirsiniz!** 🚀
+          files: YmY-OS-v43-beta-${{ steps.date.outputs.DATE }}.iso
+          draft: false
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
